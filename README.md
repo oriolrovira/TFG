@@ -1,4 +1,6 @@
 # Treball Fi de Grau 
 Oriol Rovira
 
-Pedro está escribiendo
+Pedro es escribiendo
+
+Hola, ya he escrito
