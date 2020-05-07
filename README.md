@@ -1,2 +1,2 @@
-# Treball FI de Grau 
+# Treball Fi de Grau 
 Oriol Rovira
