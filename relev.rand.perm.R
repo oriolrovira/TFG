@@ -7,12 +7,12 @@
 #' @return  
 #' \code{relev.rand.perm} function that returns a list with following elements:
 #' \itemize{
-#' \item \code{A}{n x p case-variable relevance matrix}
-#' \item \code{V}{relevance matrix}
-#' \item \code{relev.rp}{diagonal of the relevance matrix}
-#' \item \code{eig.V}{eiguen values of the relevance matrix}
-#' \item \code{y.hat.test}{test set}
-#' \item \code{diag.cov.X}{variances of the explanatory variables}
+#' \item \code{A} { n x p case-variable relevance matrix}
+#' \item \code{V} { relevance matrix}
+#' \item \code{relev.rp} { diagonal of the relevance matrix}
+#' \item \code{eig.V} { eiguen values of the relevance matrix}
+#' \item \code{y.hat.test} { test set}
+#' \item \code{diag.cov.X} { variances of the explanatory variables}
 #' }
 #' @param model ajusted model with training set. The variable relevance is computted for this model.
 #' @param newdata another model in which random permutation are used in the relevance \code{matrix V}.
