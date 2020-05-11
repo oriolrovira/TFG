@@ -10,7 +10,7 @@
 #' \item \code{A} { n x p case-variable relevance matrix}
 #' \item \code{V} { relevance matrix}
 #' \item \code{relev.rp} { diagonal of the relevance matrix}
-#' \item \code{eig.V} { eiguen values of the relevance matrix}
+#' \item \code{eig.V} { eigen values of the relevance matrix}
 #' \item \code{y.hat.test} { test set}
 #' \item \code{diag.cov.X} { variances of the explanatory variables}
 #' }
