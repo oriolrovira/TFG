@@ -1,0 +1,18 @@
+Package: ghostvar
+Type: Package
+Title: Understading complex predective models with Ghost Variables
+Version: 0.0.0.9000
+Authors@R: c(person("Oriol", "Rovira", email = "oriol-rovira@hotmail.com", role = c("cre", "ctb")), person("Pedro", "Delicado", email = "pedro.delicado@upc.edu", role = "aut"), person("Daniel", "Peña", email = "daniel.pena@uc3m.es", role = "aut"))
+Maintainer: Oriol Rovira <oriol-rovira@hotmail.com>
+Imports: mgcv, ggplot2, grid, maptools
+Description: Procedure for assigning a relevance measure to each explanatory variable in a complex predictive model. 
+	     We have a training set to fit the model and a test set to check the out of sample performance. 
+	     The individual relevance of each variable is computed by comparing in the test set the predictions of the model that includes all the variables,
+	     with those of another model in which the variable of interest is substituted by its ghost variable, 
+	     defined as the prediction of this variable by using the rest of explanatory variables. 
+	     Furthermore, we check the joint relevance of the variables by using the eigenvalues of a relevance matrix that is the covariance matrix of
+	     the vectors of individual effects.
+License: GPL-2
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1
