@@ -7,12 +7,12 @@
 #' @return  
 #' \code{relev.ghost.var} returns a list with following elements:
 #' \itemize{
-#' \item \code{A}{n x p case-variable relevance matrix}
-#' \item \code{V}{relevance matrix}
-#' \item \code{GhostX}{j-th ghost variable that it was replaced}
-#' \item \code{relev.ghost}{ diagonal of the relevance matrix}
-#' \item \code{eig.V}{eiguen values of the relevance matrix}
-#' \item \code{y.hat.test}{test set}
+#' \item \code{A} { n x p case-variable relevance matrix}
+#' \item \code{V} { relevance matrix}
+#' \item \code{GhostX} { j-th ghost variable that it was replaced}
+#' \item \code{relev.ghost} { diagonal of the relevance matrix}
+#' \item \code{eig.V} { eigen values of the relevance matrix}
+#' \item \code{y.hat.test} { test set}
 #' }
 #' 
 #' @param model ajusted model with training set. The variable relevance is computted for this model.
