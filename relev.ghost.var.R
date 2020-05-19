@@ -59,9 +59,11 @@ relev.ghost.var <- function(model,newdata=model$call$data,
   #func.model <- eval(parse(text=class(model)[1])) # What kind of model has been fitted 
   #data.tr <- model$call$data[model$call$subset,] # data used for training the model
   #n <- dim(data.tr)[1]
-  attr.model <- attributes(model$terms) #getting the varaible names in the model
-  term.labels <- attr.model$term.labels #getting the varaible names in the model
-  if (formals(func.model.ghost.var)[[2]]==formals(gam)[[2]]){
+  ifelse( isS4(model),  #getting the varaible names in the model
+          term.labels <- attr(model@terms,"term.labels"),
+          term.labels <- attr(model$terms,"term.labels")
+  )
+  if (identical(mod.gh,"gam")|identical(mod.gh,gam)){
     s.term.labels <- paste0("s(",term.labels,")")
   }else{
     s.term.labels <- term.labels
