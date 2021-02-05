@@ -1,0 +1,79 @@
+---
+title: "Variable relevance mesures (svm model)"
+author: "Oriol Rovira"
+date: "20/6/2020"
+output: html_document
+---
+
+```{r}
+load(file="rhBM_Price.Rdata") 
+# rhBM.price, rhBM.priceByArea,
+names(rhBM.price)
+log.size <- TRUE
+if (log.size){
+  rhBM.price$size <- log(rhBM.price$size)
+  names(rhBM.price)[11]<-"log.size"
+} 
+```
+
+```{r}
+names(rhBM.priceByArea)
+```
+
+### Training and test sets
+
+```{r}
+n <- dim(rhBM.price)[1]
+pr.tr <- .7
+pr.te <- 1 - pr.tr
+n.tr <- round(n*pr.tr)
+set.seed(123456)
+Itr <- sample(1:n,n.tr)
+Ite <- setdiff(1:n,Itr)
+n.te <- n-n.tr 
+```
+
+
+
+```{r}
+library(mgcv)
+library(MASS)
+library(Metrics)
+library(dplyr)
+library(e1071) 
+```
+
+
+```{r}
+x = log(rhBM.price$price)
+rhBM.price$price <- as.factor(x)
+
+classifier = svm(formula = price ~ ., 
+                 data = rhBM.price[Itr,], 
+                 type = 'C-classification', 
+                 kernel = 'linear') 
+```
+
+```{r}
+plot(m)
+```
+
+```{r}
+nt = which.min(m$mse)  # Number of trees with lowest MSE
+nt
+```
+
+
+```{r}
+regr <- randomForest(x = rhBM.price[Itr,][-1], y = rhBM.price$price[Itr] , ntree = nt)
+regr
+```
+
+```{r}
+# Predicting in the test sample
+y.hat.te <- as.numeric(predict(regr, newdata = rhBM.price[Ite,], type = "response"))
+
+plot(log(rhBM.price$price[Ite]),y.hat.te,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Ite]),y.hat.te)^2,2)))
+```
+

@@ -1,0 +1,148 @@
+---
+title: "Variable relevance mesures (RF model)"
+author: "Oriol Rovira"
+date: "4/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load(file="rhBM_Price.Rdata") 
+# rhBM.price, rhBM.priceByArea,
+names(rhBM.price)
+log.size <- TRUE
+if (log.size){
+  rhBM.price$size <- log(rhBM.price$size)
+  names(rhBM.price)[11]<-"log.size"
+} 
+```
+
+```{r}
+names(rhBM.priceByArea)
+```
+
+### Training and test sets
+
+```{r}
+n <- dim(rhBM.price)[1]
+pr.tr <- .7
+pr.te <- 1 - pr.tr
+n.tr <- round(n*pr.tr)
+set.seed(123456)
+Itr <- sample(1:n,n.tr)
+Ite <- setdiff(1:n,Itr)
+n.te <- n-n.tr 
+```
+
+
+
+```{r}
+library(mgcv)
+library(MASS)
+library(randomForest)
+library(Metrics)
+library(caret)
+library(dplyr)
+library(nlme)
+library(lattice)
+```
+
+
+```{r}
+m <- randomForest(
+  formula = log(price) ~ .,
+  data    = rhBM.price[Itr,],
+  ntree = 1500
+)
+```
+
+```{r}
+plot(m)
+```
+
+```{r}
+nt = which.min(m$mse)  # Number of trees with lowest MSE
+nt
+```
+
+
+```{r}
+regr <- randomForest(x = rhBM.price[Itr,][-1], y = rhBM.price$price[Itr] , ntree = nt)
+regr
+```
+
+```{r}
+# Predicting in the test sample
+y.hat.te <- as.numeric(predict(regr, newdata = rhBM.price[Ite,], type = "response"))
+
+plot(log(rhBM.price$price[Ite]),y.hat.te,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Ite]),y.hat.te)^2,2)))
+```
+
+### Variable relevance measures
+
+```{r}
+library(mgcv)
+library(ggplot2)
+library(grid)
+library(mgcv)
+library(maptools)# For pointLabel
+library(sp)
+
+source("D:/TFG/Scripts inicials/relev.ghost.var.R")
+source("D:/TFG/Scripts inicials/relev.rand.perm.R")
+```
+
+## Variable relevance matrix by ghost variables
+
+```{r, fig.height=14, fig.width=14}
+relev.ghost.out <- relev.ghost.var(model=regr, 
+                             newdata = rhBM.price[Ite,],
+                             func.model.ghost.var= lm)
+```
+
+plot(regr$importance,relev.ghost.out$relev.ghost)
+
+```{r final.graf.Gh, fig.height=14, fig.width=14}
+res.var.regr <- mean((regr$predicted - rhBM.price$price[Itr]) ^2)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=res.var.regr,
+                                 vars=1:7, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.Gh.pdf, eval=FALSE}
+res.var.regr <- mean((regr$predicted - rhBM.price$price[Itr]) ^2)
+pdf(file="newVarRlevIdealista_RandomForest_Gh.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=res.var.regr,
+                                 vars=1:7, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
+
+## Variable relevance matrix by random permutation
+
+```{r}
+relev.rand.out <- relev.rand.perm(model=regr, 
+                              newdata = rhBM.price[Ite,])
+```
+
+```{r, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:7, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.RP.pdf, eval=FALSE}
+pdf(file="newVarRlevIdealista_RandomForest_RP.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:7, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```

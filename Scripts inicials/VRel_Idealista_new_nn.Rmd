@@ -1,0 +1,210 @@
+---
+title: "Variable relevance measures (Neural Network)"
+subtitle: "House renting prices from Idealista.com (new)"
+author: "Pedro Delicado, Daniel Pe?a"
+date: "14th July 2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Data from Idealista.com 
+
+
+The data come from [idealista-data] (https://github.com/seralexger/idealista-data)
+
+Author: Alejandro German (Alex seralexger)
+
+(Douwnloaded March 2nd, 2018)
+
+The R-markdown file `rent_housing_data.Rmd" has been used to read the data and to save some of them into `"rhBM_Price.Rdata"`.
+
+```{r}
+load(file="rhBM_Price.Rdata") 
+# rhBM.price, rhBM.priceByArea,
+names(rhBM.price)
+log.size <- TRUE
+if (log.size){
+  rhBM.price$size <- log(rhBM.price$size)
+  names(rhBM.price)[11]<-"log.size"
+} 
+```
+
+```{r}
+names(rhBM.priceByArea)
+if (log.size){
+  rhBM.priceByArea$size <- log(rhBM.priceByArea$size)
+  names(rhBM.priceByArea)[11]<-"log.size"
+} 
+```
+
+We define training and test set, fit these models, and apply variable relevance measures.
+
+### Training and test sets
+
+```{r}
+n <- dim(rhBM.price)[1]
+pr.tr <- .7
+pr.te <- 1 - pr.tr
+n.tr <- round(n*pr.tr)
+set.seed(123456)
+Itr <- sample(1:n,n.tr)
+Ite <- setdiff(1:n,Itr)
+n.te <- n-n.tr 
+```
+
+### Neural network log(price)
+
+```{r, results='hide'}
+require(nnet)
+
+# centering and rescaling the explanatory variables before fitting the Neural Network
+scaled.rhBM.price.tr <- as.data.frame(scale(as.matrix(rhBM.price[Itr,])))
+scaled.rhBM.price.tr$price <- rhBM.price$price[Itr]
+scaled.rhBM.price.te <- as.data.frame(scale(as.matrix(rhBM.price[Ite,])))
+scaled.rhBM.price.te$price <- rhBM.price$price[Ite]
+``` 
+
+```{r, results='hide'}
+# #set.seed(123)
+# set.seed(1234)
+# nnet.logprice <- nnet(log(price)~., data=scaled.rhBM.price.tr, 
+#                size=10, linout=TRUE, maxit=100)
+# 
+# 1-(mean(nnet.logprice$residuals^2)/var(log(scaled.rhBM.price.tr$price)))
+# # [1] 0.7779355 # with set.seed(1234),  size=10, linout=TRUE, maxit=100
+# # [1] 0.7800399 # with set.seed(1234),  size=20, linout=TRUE, maxit=100
+# # [1] 0.7930953 # with set.seed(1234),  size=20, linout=TRUE, maxit=200
+# # [1] 0.7629634 # with set.seed(123),   size=10, linout=TRUE, maxit=100
+# # [1] 0.7754375 # with set.seed(123),   size=20, linout=TRUE, maxit=100
+# # [1] 0.7921368 # with set.seed(123),   size=20, linout=TRUE, maxit=200
+
+first.time <- FALSE
+
+if (first.time){
+# tuning parameters "size" and "decay" using caret
+require(caret)
+ctrl <- trainControl(
+  # method = "repeatedcv", # k-fold CV, k=num, repeated repeats times
+  # repeats = 3, # number of repetitions of the k-fold CV
+  method = "cv", # k-fold CV, k=num
+  num=10 # default
+)
+nnetGrid = expand.grid(size = c(10,15,20), decay = c(0,.1,.3,.5))
+set.seed(123)
+nnetFit <- train(
+  log(price)~., 
+  data=scaled.rhBM.price.tr,
+  method = "nnet",
+  tuneGrid = nnetGrid,
+  trControl = ctrl,
+  metric = "RMSE",
+  linout=TRUE
+)
+nnetFit
+nnet.logprice <- nnetFit$finalModel
+# > nnet.logprice
+#
+# a 16-10-1 network with 181 weights
+# inputs: Barcelona categ.distr type.chalet type.duplex type.penthouse type.studio floor 
+# hasLift floorLift log.size exterior rooms bathrooms hasParkingSpace ParkingInPrice
+# log_activation 
+#
+# output(s): log(price) 
+#
+# options were - linear output units  decay=0.5
+#
+}else{
+  # we already know that the optimal parameters are size=10, decay=0.5
+  set.seed(123)
+  nnet.logprice <- nnet(log(price)~., data=scaled.rhBM.price.tr, 
+                size=10, decay=0.5, linout=TRUE, maxit=100)
+}
+```
+
+```{r}
+1-(mean(nnet.logprice$residuals^2)/var(log(scaled.rhBM.price.tr$price)))
+# [1] 0.7912618
+``` 
+
+```{r}
+plot(log(rhBM.price$price[Itr]),nnet.logprice$fitted.values,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Itr]),nnet.logprice$fitted.values)^2,2)))
+```
+
+
+```{r}
+# Predicting in the test sample
+y.hat.te <- as.numeric( predict(nnet.logprice, newdata = scaled.rhBM.price.te) )
+
+plot(log(rhBM.price$price[Ite]),y.hat.te,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Ite]),y.hat.te)^2,2)))
+
+```
+
+### Variable relevance measures
+
+```{r}
+library(mgcv)
+library(ggplot2)
+library(grid)
+library(maptools)# For pointLabel
+
+source("F:/TFG/Scripts inicials/relev.ghost.var.R")
+source("F:/TFG/Scripts inicials/relev.rand.perm.R")
+```
+
+## Variable relevance matrix by ghost variables
+
+```{r, fig.height=14, fig.width=14}
+relev.ghost.out <- relev.ghost.var(model=nnet.logprice, 
+                             newdata = scaled.rhBM.price.te,
+                             func.model.ghost.var= lm)
+```
+
+
+```{r, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=mean(nnet.logprice$residuals^2),
+                                 vars=1:10, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.Gh.pdf, eval=FALSE}
+pdf(file="newVarRlevIdealista_nn_Gh.pdf", height=20, width=12)
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=mean(nnet.logprice$residuals^2),
+                                 vars=1:10, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
+
+## Variable relevance matrix by random permutation
+
+```{r}
+relev.rand.out <- relev.rand.perm(model=nnet.logprice, 
+                              newdata = rhBM.price[Ite,])
+```
+
+
+```{r, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:16, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+
+```{r final.graf.RP.pdf, eval=FALSE}
+pdf(file="newVarRlevIdealista_nn_RP.pdf", height=20, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:12, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```

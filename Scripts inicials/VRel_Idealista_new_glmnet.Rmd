@@ -1,0 +1,249 @@
+---
+title: "Variable relevance mesures (glmnet)"
+author: "Oriol Rovira"
+date: "4/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Data from Idealista.com 
+
+
+The data come from [idealista-data] (https://github.com/seralexger/idealista-data)
+
+Author: Alejandro German (Alex seralexger)
+
+(Douwnloaded March 2nd, 2018)
+
+The R-markdown file `rent_housing_data.Rmd" has been used to read the data and to save some of them into `"rhBM_Price.Rdata"`.
+
+```{r}
+load(file="rhBM_Price.Rdata") 
+# rhBM.price, rhBM.priceByArea,
+names(rhBM.price)
+log.size <- TRUE
+if (log.size){
+  rhBM.price$size <- log(rhBM.price$size)
+  names(rhBM.price)[11]<-"log.size"
+} 
+```
+
+```{r}
+names(rhBM.priceByArea)
+```
+
+We define training and test set, fit these models, and apply variable relevance measures.
+
+### Training and test sets
+
+```{r}
+n <- dim(rhBM.price)[1]
+pr.tr <- .7
+pr.te <- 1 - pr.tr
+n.tr <- round(n*pr.tr)
+set.seed(123456)
+Itr <- sample(1:n,n.tr)
+Ite <- setdiff(1:n,Itr)
+n.te <- n-n.tr 
+```
+
+
+```{r}
+library(mgcv)
+library(MASS)
+library(Metrics)
+library(caret)
+library(dplyr)
+library('glmnet')
+```
+
+
+```{r}
+fit.glmnet.lasso <- glmnet(as.matrix(rhBM.price[, -1]),
+                           as.matrix(rhBM.price[, 1]),
+                           alpha = 1)
+plot(fit.glmnet.lasso)
+```
+
+```{r}
+fit.glmnet.ridge <- glmnet(as.matrix(rhBM.price[, -1]),
+                           as.matrix(rhBM.price[, 1]),
+                           alpha = 0)
+plot(fit.glmnet.ridge)
+```
+
+
+
+```{r}
+x_vars <- model.matrix(price~. , rhBM.price)[,-1]
+y_var <- rhBM.price$price
+x_test = (-Itr)
+y_test = y_var[x_test]
+ 
+cv_output <- cv.glmnet(x_vars[Itr,], y_var[Itr],
+                       alpha = 1, nfolds = 5)
+plot(cv_output) 
+
+#Identifying best lamda
+best_lam_lasso <- cv_output$lambda.min
+
+lam.1se_lasso <- cv_output$lambda.1se
+lam.1se_lasso
+```
+
+```{r}
+lasso_best <- glmnet(x_vars[Itr,], y_var[Itr], alpha = 1, lambda = best_lam_lasso)
+lasso_1se <- glmnet(x_vars[Itr,], y_var[Itr], alpha = 1, lambda = lam.1se_lasso)
+```
+
+```{r}
+# Predicting in the test sample
+y.hat.te <- as.numeric( predict(lasso_1se , s = lam.1se_lasso, newx = x_vars[x_test,]) )
+
+plot(log(rhBM.price$price[Ite]),y.hat.te,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Ite]),y.hat.te)^2,2)))
+```
+
+
+```{r}
+x_vars <- model.matrix(price~. , rhBM.price)[,-1]
+y_var <- rhBM.price$price
+x_test = (-Itr)
+y_test = y_var[x_test]
+ 
+cv_output <- cv.glmnet(x_vars[Itr,], y_var[Itr],
+                       alpha = 0, nfolds = 5)
+plot(cv_output)
+ 
+#Identifying best lamda
+best_lam_ridge <- cv_output$lambda.min
+lam.1se_ridge <- cv_output$lambda.1se
+lam.1se_ridge
+```
+
+```{r}
+ridge_best <- glmnet(x_vars[Itr,], y_var[Itr], alpha = 0, lambda = best_lam_ridge)
+ridge_1se <- glmnet(x_vars[Itr,], y_var[Itr], alpha = 0, lambda = lam.1se_ridge)
+```
+
+```{r}
+# Predicting in the test sample
+y.hat.te <- as.numeric( predict(ridge_1se, s = lam.1se_ridge, newx = x_vars[x_test,]) )
+
+plot(log(rhBM.price$price[Ite]),y.hat.te,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Ite]),y.hat.te)^2,2)))
+```
+
+
+### Variable relevance measures
+
+```{r}
+library(ggplot2)
+library(grid)
+library(maptools)# For pointLabel
+
+source("C:/Users/Oriol/Desktop/TFG/Scripts inicials/relev.ghost.var.R")
+source("C:/Users/Oriol/Desktop/TFG/Scripts inicials/relev.rand.perm.R")
+```
+
+## Variable relevance matrix by ghost variables
+
+```{r, fig.height=14, fig.width=14}
+relev.ghost.out <- relev.ghost.var(model = lasso_1se, 
+                             newdata = rhBM.price[Ite,],
+                             func.model.ghost.var= lm)
+```
+
+
+```{r final.graf.Gh, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+y.hat = predict(lasso_1se, newx = x_vars[Itr,])
+sigma2.res = mean((y.hat - y_var[Itr])^2)
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=sigma2.res,
+                                 vars=1:10, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.Gh.pdf, eval=FALSE}
+y.hat = predict(lasso_1se, newx = x_vars[Itr,])
+sigma2.res = mean((y.hat - y_var[Itr])^2)
+pdf(file="newVarRlevIdealista_glmnet_Lasso_Gh.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=sigma2.res,
+                                 vars=1:9, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
+
+```{r, fig.height=14, fig.width=14}
+relev.ghost.out <- relev.ghost.var(model = ridge_1se, 
+                             newdata = rhBM.price[Ite,],
+                             func.model.ghost.var= lm)
+```
+
+
+```{r final.graf.Gh, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+y.hat = predict(ridge_1se, newx = x_vars[Itr,])
+sigma2.res = mean((y.hat - y_var[Itr])^2)
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=sigma2.res,
+                                 vars=1:9, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.Gh.pdf, eval=FALSE}
+y.hat = predict(ridge_1se, newx = x_vars[Itr,])
+sigma2.res = mean((y.hat - y_var[Itr])^2)
+pdf(file="newVarRlevIdealista_glmnet_Ridge_Gh.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=sigma2.res,
+                                 vars=1:9, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
+## Variable relevance matrix by random permutation
+
+```{r}
+relev.rand.out <- relev.rand.perm(model=lasso_1se, 
+                              newdata = rhBM.price[Ite,])
+```
+
+```{r, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:2, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.RP.pdf, eval=FALSE}
+pdf(file="newVarRlevIdealista_glmnet_Lasso_RP.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:2, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
+
+```{r}
+relev.rand.out <- relev.rand.perm(model=ridge_1se, 
+                              newdata = rhBM.price[Ite,])
+```
+
+```{r, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:10, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.RP.pdf, eval=FALSE}
+pdf(file="newVarRlevIdealista_glmnet_Ridge_RP.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:8, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```

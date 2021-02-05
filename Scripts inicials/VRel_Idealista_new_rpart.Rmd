@@ -1,0 +1,138 @@
+---
+title: "Variable relevance mesures (rpart)"
+author: "Oriol Rovira"
+date: "4/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Data from Idealista.com 
+
+
+The data come from [idealista-data] (https://github.com/seralexger/idealista-data)
+
+Author: Alejandro German (Alex seralexger)
+
+(Douwnloaded March 2nd, 2018)
+
+The R-markdown file `rent_housing_data.Rmd" has been used to read the data and to save some of them into `"rhBM_Price.Rdata"`.
+
+```{r}
+load(file="rhBM_Price.Rdata") 
+# rhBM.price, rhBM.priceByArea,
+names(rhBM.price)
+log.size <- TRUE
+if (log.size){
+  rhBM.price$size <- log(rhBM.price$size)
+  names(rhBM.price)[11]<-"log.size"
+} 
+```
+
+```{r}
+names(rhBM.priceByArea)
+```
+
+We define training and test set, fit these models, and apply variable relevance measures.
+
+### Training and test sets
+
+```{r}
+n <- dim(rhBM.price)[1]
+pr.tr <- .7
+pr.te <- 1 - pr.tr
+n.tr <- round(n*pr.tr)
+set.seed(123456)
+Itr <- sample(1:n,n.tr)
+Ite <- setdiff(1:n,Itr)
+n.te <- n-n.tr 
+```
+
+```{r}
+library(rpart)
+library(rpart.plot)
+library(mgcv)
+```
+
+
+```{r}
+tree<- rpart(formula = log(price) ~ ., data = rhBM.price[Itr,])
+```
+
+```{r}
+rpart.plot(tree)
+```
+
+
+```{r}
+# Predicting in the test sample
+y.hat.te <- as.numeric(predict(tree, newdata = rhBM.price[Ite,], type = "vector"))
+
+plot(log(rhBM.price$price[Ite]),y.hat.te,
+     main=paste("Corr^2=",round(cor(log(rhBM.price$price[Ite]),y.hat.te)^2,2)))
+```
+
+### Variable relevance measures
+
+```{r}
+library(mgcv)
+library(ggplot2)
+library(grid)
+library(maptools)# For pointLabel
+
+source("F:/TFG/Scripts inicials/relev.ghost.var.R")
+source("F:/TFG/Scripts inicials/relev.rand.perm.R")
+```
+
+## Variable relevance matrix by ghost variables
+
+```{r, fig.height=14, fig.width=14}
+relev.ghost.out <- relev.ghost.var(model=tree, 
+                             newdata = rhBM.price[Ite,],
+                             func.model.ghost.var= lm)
+```
+
+
+
+```{r final.graf.Gh, fig.height=14, fig.width=14}
+res.var.tree <- mean(residuals(tree)^2)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=res.var.tree,
+                                 vars=1:8, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.Gh.pdf, eval=FALSE}
+res.var.tree <- mean(residuals(tree)^2)
+pdf(file="newVarRlevIdealista_rpart_Gh.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.ghost.var(relev.ghost.out, n1=n.tr, resid.var=res.var.tree,
+                                 vars=1:2, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
+
+## Variable relevance matrix by random permutation
+
+```{r}
+relev.rand.out <- relev.rand.perm(model=tree, 
+                              newdata = rhBM.price[Ite,])
+```
+
+```{r, fig.height=14, fig.width=14}
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:8, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=4)
+```
+
+```{r final.graf.RP.pdf, eval=FALSE}
+pdf(file="newVarRlevIdealista_rpart_RP.pdf", height=16, width=12)
+# Plotting only eigenvectors with more than 1% of total relevance
+plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost,
+                                 vars=1:2, sum.lm.tr=NULL,
+                                 alpha=.01, ncols.plot=3)
+dev.off()
+```
