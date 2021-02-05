@@ -1,71 +1,40 @@
-#' @title Relevance by random permutations in the linear and additive models 
-#' @name relev.rand.perm
-#' 
-#' @description  \code{\link{relev.rand.perm}} Computing the case-variable relevance case
-#' \code{matrix A} using the random permutation strategy.
-#' 
-#' @return  
-#' \code{relev.rand.perm} function that returns a list with following elements:
-#' \itemize{
-#' \item \code{A} { n x p case-variable relevance matrix}
-#' \item \code{V} { relevance matrix}
-#' \item \code{relev.rp} { diagonal of the relevance matrix}
-#' \item \code{eig.V} { eigen values of the relevance matrix}
-#' \item \code{y.hat.test} { test set}
-#' \item \code{diag.cov.X} { variances of the explanatory variables}
-#' }
-#' @param model ajusted model with training set. The variable relevance is computted for this model.
-#' @param newdata another model in which random permutation are used in the relevance \code{matrix V}.
-#' @param nperm random permutacions.
-#' 
-#' @seealso \code{\link{relev.ghost.var}} and \code{\link{relevance2cluster}}
-#' @examples 
-#' n1 <- 2000                                           # size of the training sample 
-#' n2 <- 1000                                           # size of the test sample
-#' sigma.1 <- 1                                         # sd for x1
-#' sigma.2 <- 1                                         # sd for x2
-#' sigma.3 <- 1                                         # sd for x3
-#' sigma.eps <- 1                                       # residual sd for defining y
-#' rho <- .95                                           # correlation between x2 and x3
-#' beta1 <- 1                                           # coef. of y=x_1+...+x_{p1}
-#' beta2 <- 1                                           # coef. of y=x_1+...+x_{p2}
-#' beta3 <- 1                                           # coef. of y=x_1+...+x_{p2}
-#' X1 <- sigma.1 * matrix(rnorm(n1+n2),ncol=1)          # Generating variables x2 and x3
-#' Sigma.2 <- matrix(rho, nrow=2, ncol=2)               # Generating variables x2 and x3
-#' diag(Sigma.2) <- 1
-#' eig.Sigma.2 <- eigen(Sigma.2)
-#' sqrt.Sigma.2 <- eig.Sigma.2$vectors %*% diag(eig.Sigma.2$values^.5) %*% t(eig.Sigma.2$vectors)
-#' X23 <- matrix(rnorm((n1+n2)*2),ncol=2) %*% sqrt.Sigma.2 %*%diag(c(sigma.2,sigma.3))
-#' X2<-X23[,1]
-#' X3<-X23[,2]
-#' y <- beta1*X1 + beta2*X2 + beta3*X3 + rnorm(n1+n2,sd=sigma.eps) # defining the response variable
-#' X <- cbind(X1,X2,X3)
-#' colnames(X) <- paste0("x",1:3)
-#' yX <- as.data.frame(cbind(y,X))
-#' colnames(yX) <- c("y",paste0("x",1:3))
-#' tr.sample <- (1:n1) # Training sample:
-#' lm.tr <- lm(y ~ ., data=yX, subset = tr.sample)                    # Fitting the linear model
-#' (sum.lm.tr <- summary(lm.tr))
-#' y.hat.ts <- as.numeric( predict(lm.tr,newdata = yX[-tr.sample,]) ) # Predicting in the test sample
-#' relev.ghost.out <- relev.ghost.var(model=lm.tr, newdata = yX[-tr.sample,], func.model.ghost.var= lm)
-#' relev.rand.out <- relev.rand.perm(model=lm.tr, newdata = yX[-tr.sample,], func.model.ghost.var= lm)
-#' plot.relev.rand.perm(relev.rand.out, relev.ghost=relev.ghost.out$relev.ghost, sum.lm.tr=sum.lm.tr)
-#' 
-#' @rdname relev.rand.perm
-#' @export
+### Computing the case-variable relevance matrix, 
+### using the random permutation strategy
 
 relev.rand.perm <- function(model,newdata=model$call$data,
-  nperm=1, ...){
+                           nperm=1, ...){
   #func.model <- eval(parse(text=class(model)[1])) # What kind of model has been fitted 
   #data.tr <- model$call$data[model$call$subset,] # data used for training the model
   #n <- dim(data.tr)[1]
-  attr.model <- attributes(model$terms) #getting the varaible names in the model
-  term.labels <- attr.model$term.labels #getting the varaible names in the model
+  #attr.model <- attributes(model$terms) #getting the varaible names in the model
+
+  if( isS4(model)){  #getting the varaible names in the model
+    term.labels <- attr(model@terms,"term.labels")
+  }else{
+    if("glmnet" %in% class(model)){
+      term.labels <- rownames(model$beta)
+    }else{
+      if("randomForest" %in% class(model)){
+        term.labels <- rownames(model$importance)
+      }else{
+        term.labels <- attr(model$terms,"term.labels")
+      }
+    }
+  }  
+  #if (identical(func.model.ghost.var,"gam")|identical(func.model.ghost.var,gam)){
+  #  s.term.labels <- paste0("s(",term.labels,")")
+  #}else{
+  #  s.term.labels <- term.labels
+  #}
   p <- length(term.labels)
-  
   n2 <- dim(newdata)[1] # newdata is the test sample
   # Predicting in the test sample
-  y.hat.ts <- as.numeric( predict(model,newdata = newdata) )
+  
+  if("glmnet" %in% class(model)){
+    y.hat.ts <- as.numeric( predict(model, newx = as.matrix(newdata[ , term.labels])) )
+  }else{
+    y.hat.ts <- as.numeric( predict(model, newdata = newdata) )
+  }
   
   A <- matrix(0,nrow=n2, ncol=p)
   colnames(A) <- term.labels
@@ -77,7 +46,11 @@ relev.rand.perm <- function(model,newdata=model$call$data,
       xj.perm <- sample(yX.ts[,term.labels[j]])
       diag.cov.X[j] <- var(xj.perm)
       yX.ts.aux[,term.labels[j]] <- xj.perm
-      y.hat.ts.j <- as.numeric( predict(model,newdata = yX.ts.aux) )
+      if("glmnet" %in% class(model)){
+        y.hat.ts.j <- as.numeric( predict(model, newx = as.matrix(yX.ts.aux[ , term.labels])) )
+      }else{
+        y.hat.ts.j <- as.numeric( predict(model, newdata = yX.ts.aux) )
+      }
       A[,j] <- A[,j] + y.hat.ts - y.hat.ts.j
     }
   }
@@ -86,9 +59,143 @@ relev.rand.perm <- function(model,newdata=model$call$data,
   relev.rp <- diag(V)
   eig.V <- eigen(V)
   return(list(A=A, V=V, 
-    relev.rp=relev.rp, 
-    eig.V=eig.V,
-    y.hat.test=y.hat.ts, 
-    diag.cov.X=diag.cov.X)
-  )
+              relev.rp=relev.rp, 
+              eig.V=eig.V,
+              y.hat.test=y.hat.ts, 
+              diag.cov.X=diag.cov.X)
+         )
+}
+
+plot.relev.rand.perm <- function(relev.rand.out,
+                                 vars=NULL, sum.lm.tr=NULL, relev.ghost=NULL,
+                                 alpha=.001, ncols.plot=3){
+  A <- relev.rand.out$A
+  V <- relev.rand.out$V
+  eig.V <- relev.rand.out$eig.V
+  relev.rp <- relev.rand.out$relev.rp
+  diag.cov.X <- relev.rand.out$diag.cov.X
+  
+  p  <- dim(A)[2]
+  
+  if (ncols.plot<3){
+    ncols.plot<-3 
+    warning("The number of plot columns must be at least 3")
+  }
+  max.plots <- 4*ncols.plot
+  if (is.null(vars)){
+    vars <- 1:min(max.plots,p)
+  }else{
+    if (length(vars)>max.plots){
+      vars <- vars[1,max.plots]
+      warning(
+        paste("Only the first", max.plots, "selected variables in 'vars' are used"))
+    }
+  }
+  n.vars <- length(vars)
+  nrows.plot <- 1 + n.vars%/%ncols.plot + (n.vars%%ncols.plot>0)
+  
+  if (!is.null(sum.lm.tr)){
+    F.transformed <- 2*sum.lm.tr$coefficients[-1,1]^2*diag.cov.X
+    #F.critic.transformed <- qf(1-alpha,1,n1-p-1)*2*sum.lm.tr$coefficients[-1,2]^2*diag.cov.X
+  #}else{
+    #F.critic.transformed <- numeric(p)
+  }
+  
+  rel.Gh <- data.frame(relev.rp=relev.rp)
+  rel.Gh$var.names <- colnames(A)
+  
+  plot.rel.Gh <- ggplot(rel.Gh) +
+    #geom_bar(aes(x=reorder(var.names, relev.univ.rp), y=relev.univ.rp),
+    geom_bar(aes(x=reorder(var.names,X=1:length(var.names)), y=relev.rp), 
+             stat="identity", fill="darkgray") +
+    ggtitle("Relev. by rand.permut.") +
+    theme(axis.title=element_blank())+
+    theme_bw()+
+    ylab("Relevance")+
+    xlab("Variable name") + 
+    coord_flip()
+
+  # if (!is.null(sum.lm.tr)){
+  #   plot.rel.Gh <- plot.rel.Gh +
+  #   geom_hline(aes(yintercept = F.critic.transformed),color="blue",size=1.5,linetype=2)
+  # }    
+  # plot.rel.Gh <- plot.rel.Gh + coord_flip()
+  
+  # plot.rel.Gh.pctg <- ggplot(rel.Gh) +
+  #   #geom_bar(aes(x=reorder(var.names, relev.univ.rp), y=relev.univ.rp),
+  #   geom_bar(aes(x=var.names, y=100*relev.rp/sum(relev.rp)),
+  #            stat="identity") +
+  #   coord_flip() +
+  #   ggtitle("Relev. by rand.permut. (% of total relevance)") +
+  #   theme(axis.title=element_blank())
+  
+  # eigen-structure
+  # eig.V <- eigen(V)
+  eig.vals.V <- eig.V$values
+  eig.vecs.V <- eig.V$vectors
+  
+  expl.var <- round(100*eig.vals.V/sum(eig.vals.V),2)
+  cum.expl.var <- cumsum(expl.var)
+  
+  # op <-par(mfrow=c(2,2))
+  # plot(eig.vals.V, main="Eigenvalues of matrix V",ylab="Eigenvalues", type="b")
+  # for (j in (1:p)){
+  #   plot(eig.V$vectors[,j],main=paste("Eigenvector",j,", Expl.Var.:",expl.var[j],"%"))
+  #   abline(h=0,col=2,lty=2)
+  # }
+  # par(op)
+  
+  
+  eig.V.df <- as.data.frame(eig.V$vectors)
+  eig.V.df$var.names <- colnames(A)
+  
+  op <-par(mfrow=c(nrows.plot,ncols.plot))
+  plot(0,0,type="n",axes=FALSE,xlab="",ylab="")
+  
+  if (!is.null(relev.ghost)){
+    plot(relev.rp,relev.ghost,
+         xlim=c(0,max(relev.rp)),
+         ylim=c(0,max(relev.ghost)),
+         xlab="Relev. by rand.perm.", 
+         ylab="Relev. by Ghost variables")
+    pointLabel(relev.rp,relev.ghost, colnames(A))
+  }else{
+    if (!is.null(sum.lm.tr)){
+      plot(F.transformed,relev.rp,
+           xlim=c(0,max(c(F.transformed,relev.rp))),
+           ylim=c(0,max(c(F.transformed,relev.rp))),
+           xlab="2*beta*Var(x_i)", ylab="Relev. by rand.perm.")
+      pointLabel(F.transformed,relev.rp, colnames(A))
+      abline(a=0,b=1,col=2)
+      #abline(v=F.critic.transformed,h=F.critic.transformed,lty=2,col="blue",lwd=2)
+    }else{
+      plot(0,0,type="n",axes=FALSE,xlab="",ylab="")
+    }
+  }
+  par(xaxp=c(1,p,min(p,5)))
+  plot(eig.vals.V, ylim=c(0,max(eig.vals.V)),
+       main=expression(paste("Eigenvalues of matrix ",tilde(V))),
+       ylab="Eigenvalues",type="b")
+  abline(h=0,col="red",lty=2)
+  
+  par(op)
+  
+  pushViewport(viewport(layout = grid.layout(nrows.plot, ncols.plot))) #package grid
+  vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
+  print(plot.rel.Gh,vp = vplayout(1,1))
+  for (j in vars){
+    print(
+      ggplot(eig.V.df) +
+#       geom_bar(aes(x=var.names, y=eig.V.df[,j]),
+        geom_bar(aes(x=reorder(eig.V.df$var.names,X=1:length(eig.V.df$var.names)), 
+                     y=eig.V.df[,j]),
+                 stat="identity") +
+        geom_hline(aes(yintercept=0),color="red",linetype=2,size=1) +
+        ylim(min(eig.V.df[,j])-.5,max(eig.V.df[,j])+.5) +
+        coord_flip() +
+        ggtitle(paste0("Eig.vect.",j,", Expl.Var.: ",expl.var[j],"%")) +
+        theme(axis.title=element_blank(),plot.title = element_text(size = 12)),
+      vp = vplayout(2+(j-1)%/%ncols.plot, 1+(j-1)%%ncols.plot)
+    )
+  }
 }
