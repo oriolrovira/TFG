@@ -1,69 +1,23 @@
-#' @title Relevance by ghost variables in linear regression 
-#' @name relev.ghost.var
-#' 
-#' @description  \code{\link{relev.ghost.var}} Computing the case-variable relevance case
-#' \code{matrix A} by using the Ghost Variables strategy.
-#' 
-#' @return  
-#' \code{relev.ghost.var} returns a list with following elements:
-#' \itemize{
-#' \item \code{A} { n x p case-variable relevance matrix}
-#' \item \code{V} { relevance matrix}
-#' \item \code{GhostX} { j-th ghost variable that it was replaced}
-#' \item \code{relev.ghost} { diagonal of the relevance matrix}
-#' \item \code{eig.V} { eigen values of the relevance matrix}
-#' \item \code{y.hat.test} { test set}
-#' }
-#' 
-#' @param model ajusted model with training set. The variable relevance is computted for this model.
-#' @param newdata another model in which the variable of interest is substituted by its ghost variable, defined as the prediction of this variable by using the rest of explanatory variables.
-#' @param func.model.ghost.var model we want to explain to build ghost variables
-#' 
-#' @seealso \code{\link{relev.rand.perm}} and \code{\link{relevance2cluster}}
-#' @examples 
-#' n1 <- 2000                                           # size of the training sample 
-#' n2 <- 1000                                           # size of the test sample
-#' sigma.1 <- 1                                         # sd for x1
-#' sigma.2 <- 1                                         # sd for x2
-#' sigma.3 <- 1                                         # sd for x3
-#' sigma.eps <- 1                                       # residual sd for defining y
-#' rho <- .95                                           # correlation between x2 and x3
-#' beta1 <- 1                                           # coef. of y=x_1+...+x_{p1}
-#' beta2 <- 1                                           # coef. of y=x_1+...+x_{p2}
-#' beta3 <- 1                                           # coef. of y=x_1+...+x_{p2}
-#' X1 <- sigma.1 * matrix(rnorm(n1+n2),ncol=1)          # Generating variables x2 and x3
-#' Sigma.2 <- matrix(rho, nrow=2, ncol=2)               # Generating variables x2 and x3
-#' diag(Sigma.2) <- 1
-#' eig.Sigma.2 <- eigen(Sigma.2)
-#' sqrt.Sigma.2 <- eig.Sigma.2$vectors %*% diag(eig.Sigma.2$values^.5) %*% t(eig.Sigma.2$vectors)
-#' X23 <- matrix(rnorm((n1+n2)*2),ncol=2) %*% sqrt.Sigma.2 %*%diag(c(sigma.2,sigma.3))
-#' X2<-X23[,1]
-#' X3<-X23[,2]
-#' y <- beta1*X1 + beta2*X2 + beta3*X3 + rnorm(n1+n2,sd=sigma.eps) # defining the response variable
-#' X <- cbind(X1,X2,X3)
-#' colnames(X) <- paste0("x",1:3)
-#' yX <- as.data.frame(cbind(y,X))
-#' colnames(yX) <- c("y",paste0("x",1:3))
-#' tr.sample <- (1:n1) # Training sample:
-#' lm.tr <- lm(y ~ ., data=yX, subset = tr.sample)                    # Fitting the linear model
-#' (sum.lm.tr <- summary(lm.tr))
-#' y.hat.ts <- as.numeric( predict(lm.tr,newdata = yX[-tr.sample,]) ) # Predicting in the test sample
-#' relev.ghost.out <- relev.ghost.var(model=lm.tr, newdata = yX[-tr.sample,], func.model.ghost.var= lm)
-#' plot.relev.ghost.var(relev.ghost.out, n1=n1, resid.var=sum.lm.tr$sigma^2, sum.lm.tr=sum.lm.tr)
-#' 
-#' @rdname relev.matrix.ghost
-#' @export 
 
 relev.ghost.var <- function(model,newdata=model$call$data,
   func.model.ghost.var=gam, ...){ #gam (Fits a generalized additive model)
   #func.model <- eval(parse(text=class(model)[1])) # What kind of model has been fitted 
   #data.tr <- model$call$data[model$call$subset,] # data used for training the model
   #n <- dim(data.tr)[1]
-  ifelse( isS4(model),  #getting the varaible names in the model
-          term.labels <- attr(model@terms,"term.labels"),
-          term.labels <- attr(model$terms,"term.labels")
-  )
-  if (identical(mod.gh,"gam")|identical(mod.gh,gam)){
+  if( isS4(model)){  #getting the variable names in the model
+          term.labels <- attr(model@terms,"term.labels")
+  }else{
+        if("glmnet" %in% class(model)){
+          term.labels <- rownames(model$beta)
+        }else{
+          if("randomForest" %in% class(model)){
+            term.labels <- rownames(model$importance)
+          }else{
+            term.labels <- attr(model$terms,"term.labels")
+          }
+        }
+  }  
+  if (identical(func.model.ghost.var,"gam")|identical(func.model.ghost.var,gam)){
     s.term.labels <- paste0("s(",term.labels,")")
   }else{
     s.term.labels <- term.labels
@@ -72,7 +26,12 @@ relev.ghost.var <- function(model,newdata=model$call$data,
   
   n2 <- dim(newdata)[1] # newdata is the test sample (mostra de prova)
   # Predicting in the test sample
-  y.hat.ts <- as.numeric( predict(model,newdata = newdata) )
+  if("glmnet" %in% class(model)){
+        y.hat.ts <- as.numeric( predict(model, newx = as.matrix(newdata[ , term.labels])) )
+      }else{
+        y.hat.ts <- as.numeric( predict(model, newdata = newdata) )
+      }
+ 
   
   A <- matrix(0,nrow=n2, ncol=p)
   colnames(A) <- term.labels
@@ -83,7 +42,11 @@ relev.ghost.var <- function(model,newdata=model$call$data,
     form.j <- as.formula(paste0(term.labels[j],"~",paste(s.term.labels[-j],collapse="+")))
     xj.hat <- func.model.ghost.var(form.j, data=yX.ts[,term.labels],...)$fitted.values
     yX.ts.aux[,term.labels[j]] <- xj.hat
-    y.hat.ts.j <- as.numeric( predict(model,newdata = yX.ts.aux) )
+    if("glmnet" %in% class(model)){
+      y.hat.ts.j <- as.numeric( predict(model, newx = as.matrix(yX.ts.aux[ , term.labels])) )
+    }else{
+      y.hat.ts.j <- as.numeric( predict(model, newdata = yX.ts.aux) )
+    }
     A[,j] <- y.hat.ts - y.hat.ts.j
     GhostX[,j] <- xj.hat
   }
@@ -97,3 +60,134 @@ relev.ghost.var <- function(model,newdata=model$call$data,
   )
 }
 
+plot.relev.ghost.var <- function(relev.ghost.out, n1, resid.var,
+  vars=NULL, sum.lm.tr=NULL,
+  alpha=.01, ncols.plot=3){
+  A <- relev.ghost.out$A
+  V <- relev.ghost.out$V
+  eig.V <- relev.ghost.out$eig.V
+  GhostX <- relev.ghost.out$GhostX
+  relev.ghost <- relev.ghost.out$relev.ghost
+  
+  p  <- dim(A)[2]
+  
+  if (ncols.plot<3){
+    ncols.plot<-3 
+    warning("The number of plot columns must be at least 3")
+  }
+  max.plots <- 4*ncols.plot
+  if (is.null(vars)){
+    vars <- 1:min(max.plots,p)
+  }else{
+    if (length(vars)>max.plots){
+      vars <- vars[1,max.plots]
+      warning(
+        paste("Only the first", max.plots, "selected variables in 'vars' are used"))
+    }
+  }
+  n.vars <- length(vars)
+  nrows.plot <- 1 + n.vars%/%ncols.plot + (n.vars%%ncols.plot>0)
+  
+  if (!is.null(sum.lm.tr)){
+    F.transformed <- resid.var*sum.lm.tr$coefficients[-1,3]^2/n1
+  }
+  F.critic.transformed <- resid.var*qf(1-alpha,1,n1-p-1)/n1
+  
+  rel.Gh <- data.frame(relev.ghost=relev.ghost)
+  rel.Gh$var.names <- colnames(A)
+  
+  plot.rel.Gh <- ggplot(rel.Gh) +
+    geom_bar(aes(x=reorder(var.names,X=1:length(var.names)), y=relev.ghost), 
+      stat="identity", fill="darkgray") +
+    ggtitle("Relev. by Ghost variables") +
+    geom_hline(aes(yintercept = F.critic.transformed),color="blue",size=1.5,linetype=2)+
+    theme(axis.title=element_blank())+
+    theme_bw()+
+    ylab("Relevance")+
+    xlab("Variable name") +
+    coord_flip()
+  
+  plot.rel.Gh.pctg <- ggplot(rel.Gh) +
+    geom_bar(aes(x=reorder(var.names,X=1:length(var.names)), 
+      y=100*relev.ghost/sum(relev.ghost)), 
+      stat="identity", fill="darkgray") +
+    coord_flip() +
+    ggtitle("Relev. by Ghost variables (% of total relevance)") +
+    theme(axis.title=element_blank())
+  
+  # eigen-structure
+  # eig.V <- eigen(V)
+  eig.vals.V <- eig.V$values
+  eig.vecs.V <- eig.V$vectors
+  
+  expl.var <- round(100*eig.vals.V/sum(eig.vals.V),2)
+  cum.expl.var <- cumsum(expl.var)
+  
+  # op <-par(mfrow=c(2,2))
+  # plot(eig.vals.V, main="Eigenvalues of matrix V",ylab="Eigenvalues", type="b")
+  # for (j in (1:p)){
+  #   plot(eig.V$vectors[,j],main=paste("Eigenvector",j,", Expl.Var.:",expl.var[j],"%"))
+  #   abline(h=0,col=2,lty=2)
+  # }
+  # par(op)
+  
+  
+  eig.V.df <- as.data.frame(eig.V$vectors)
+  eig.V.df$var.names <- colnames(A)
+  
+  op <-par(mfrow=c(nrows.plot,ncols.plot))
+  plot(0,0,type="n",axes=FALSE,xlab="",ylab="")
+  
+  if (!is.null(sum.lm.tr)){
+    plot(F.transformed,relev.ghost,
+      xlim=c(0,max(c(F.transformed,relev.ghost))),
+      ylim=c(0,max(c(F.transformed,relev.ghost))),
+      xlab=expression(paste("F-statistics*",hat(sigma)^2/n[1])), 
+      ylab="Relev. by Ghost variables")
+    pointLabel(F.transformed,relev.ghost, colnames(A))
+    abline(a=0,b=1,col=2)
+    abline(v=F.critic.transformed,h=F.critic.transformed,lty=2,col="blue",lwd=2)
+  }else{
+    plot(0,0,type="n",axes=FALSE,xlab="",ylab="")
+  } 
+  
+  par(xaxp=c(1,p,min(p,5)))
+  plot(eig.vals.V, ylim=c(0,max(eig.vals.V)),
+    main="Eigenvalues of matrix V",
+    ylab="Eigenvalues",type="b")
+  abline(h=0,col="red",lty=2)
+  
+  par(op)
+  
+  pushViewport(viewport(layout = grid.layout(nrows.plot, ncols.plot))) #package grid
+  vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
+  print(plot.rel.Gh,vp = vplayout(1,1))
+  for (j in vars){
+    print(
+      ggplot(eig.V.df) +
+        #       geom_bar(aes(x=var.names, y=eig.V.df[,j]),
+        geom_bar(aes(x=reorder(eig.V.df$var.names,X=1:length(eig.V.df$var.names)), 
+          y=eig.V.df[,j]), stat="identity") +
+        geom_hline(aes(yintercept=0),color="red",linetype=2,size=1) +
+        ylim(min(eig.V.df[,j])-.5,max(eig.V.df[,j])+.5) +
+        coord_flip() +
+        ggtitle(paste0("Eig.vect.",j,", Expl.Var.: ",expl.var[j],"%")) +
+        theme(axis.title=element_blank(),plot.title = element_text(size = 12)),
+      vp = vplayout(2+(j-1)%/%ncols.plot, 1+(j-1)%%ncols.plot)
+    )
+  }
+}
+
+relevance2cluster <- function(V,method="ward.D2",...){
+  dV <- diag(V)
+  p<- length(dV)
+  one <- 1+numeric(p)
+  # Distance matrix from similarity matrix V:
+  W <- as.dist(sqrt(one %*% t(dV) + dV %*% t(one) -2*V))
+  hcl.W <- hclust(W, method = method)
+  plot(hcl.W,...)
+}
+
+#R For Dummies
+#Both the names and the dimensions of matrices and arrays are stored in R as attributes of the object. #These attributes can be seen as labeled values you can attach to any object. They form one of the 
+#mechanisms R uses to define specific object types like dates, time series, and so on.
